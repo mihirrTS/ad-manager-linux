@@ -7,6 +7,8 @@ import threading
 import mediapipe as mp
 from tensorflow.keras.models import load_model
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+import subprocess
+import shutil
 
 # ======== Load Models ========
 MODEL_DIR = "models"
@@ -45,31 +47,26 @@ def open_camera():
 
 # ======== Play Video with Label Overlay ========
 def play_video(video_path, duration_limit=5):
-    global is_playing_ad, last_prediction_label
-    cap = cv2.VideoCapture(video_path)
+    global is_playing_ad
 
-    if not cap.isOpened():
-        print(f"[ERROR] Cannot open video: {video_path}")
+    if not shutil.which("mpv"):
+        print("[ERROR] mpv is not installed. Install it with: sudo apt install mpv")
         return
 
-    cv2.namedWindow("Ad Display", cv2.WND_PROP_FULLSCREEN)
-    cv2.setWindowProperty("Ad Display", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-
     is_playing_ad = True
-    start_time = time.time()
 
-    while cap.isOpened() and (time.time() - start_time < duration_limit):
-        ret, frame = cap.read()
-        if not ret:
-            break
+    try:
+        subprocess.run([
+            "mpv",
+            "--fs",  # Fullscreen
+            "--no-terminal",
+            "--really-quiet",
+            f"--length={duration_limit}",
+            video_path
+        ])
+    except Exception as e:
+        print(f"[MPV ERROR] {e}")
 
-        frame = cv2.resize(frame, (1920, 1080))
-        cv2.imshow("Ad Display", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyWindow("Ad Display")
     is_playing_ad = False
 
 # ======== Predict Category from Face Image ========
