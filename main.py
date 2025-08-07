@@ -1,4 +1,3 @@
-# main.py
 import cv2
 import numpy as np
 import os
@@ -34,6 +33,7 @@ is_playing_ad = False
 last_seen_time = 0
 DETECTION_TIMEOUT = 5
 ad_lock = threading.Lock()
+video_play_lock = threading.Lock()  # 🔒 Ensures only 1 video plays at a time
 
 # Defaults (can be overridden from command-line)
 VIDEO_SPEED = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
@@ -138,9 +138,11 @@ def main_loop():
                 if video_files:
                     video_path = os.path.join(category_path, random.choice(video_files))
                     print(f"[TARGETED] Playing: {video_path}")
-                    play_video(video_path, duration_limit=PLAY_DURATION, speed=VIDEO_SPEED)
+                    with video_play_lock:  # 🔒 Ensure only one plays
+                        play_video(video_path, duration_limit=PLAY_DURATION, speed=VIDEO_SPEED)
                     continue
 
+        # Play random ad if nothing detected
         all_videos = []
         for cat in CATEGORIES:
             cat_path = os.path.join(ADS_FOLDER, cat)
@@ -150,7 +152,8 @@ def main_loop():
                         all_videos.append(os.path.join(cat_path, video))
         if all_videos:
             print("[RANDOM] Playing random ad")
-            play_video(random.choice(all_videos), duration_limit=PLAY_DURATION, speed=VIDEO_SPEED)
+            with video_play_lock:  # 🔒
+                play_video(random.choice(all_videos), duration_limit=PLAY_DURATION, speed=VIDEO_SPEED)
 
         time.sleep(0.1)
 
