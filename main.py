@@ -1,3 +1,4 @@
+# main.py
 import cv2
 import numpy as np
 import os
@@ -9,6 +10,7 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 import subprocess
 import shutil
+import sys
 
 # ======== Load Models ========
 MODEL_DIR = "models"
@@ -24,20 +26,23 @@ CATEGORIES = [
 ]
 
 ADS_FOLDER = "ads"
-os.makedirs(ADS_FOLDER, exist_ok=True)  # Ensure ads/ exists
+os.makedirs(ADS_FOLDER, exist_ok=True)
 
-# ======== Global State ========
+# ======== Global Configurable State ========
 ad_queue = []
 is_playing_ad = False
 last_seen_time = 0
 DETECTION_TIMEOUT = 5
 ad_lock = threading.Lock()
 
-# ======== Face Detector (MediaPipe) ========
+# Defaults (can be overridden from command-line)
+VIDEO_SPEED = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
+PLAY_DURATION = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+
+# ======== Face Detector ========
 mp_face = mp.solutions.face_detection
 face_detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.6)
 
-# ======== Webcam =========
 def open_camera():
     for i in range(2):
         cap = cv2.VideoCapture(i)
@@ -45,8 +50,8 @@ def open_camera():
             return cap
     raise RuntimeError("❌ No webcam found.")
 
-# ======== Play Video with Label Overlay ========
-def play_video(video_path, duration_limit=5):
+# ======== Play Video ========
+def play_video(video_path, duration_limit=5, speed=1.0):
     global is_playing_ad
 
     if not shutil.which("mpv"):
@@ -54,61 +59,47 @@ def play_video(video_path, duration_limit=5):
         return
 
     is_playing_ad = True
-
     try:
         subprocess.run([
             "mpv",
-            "--fs",  # Fullscreen
+            "--fs",
             "--no-terminal",
             "--really-quiet",
             f"--length={duration_limit}",
+            f"--speed={speed}",
             video_path
         ])
     except Exception as e:
         print(f"[MPV ERROR] {e}")
-
     is_playing_ad = False
 
-# ======== Predict Category from Face Image ========
 def get_category_from_detection(face_img):
-    global last_prediction_label
     try:
         face = cv2.resize(face_img, (160, 160))
         face = preprocess_input(face.astype("float32"))
         face = np.expand_dims(face, axis=0)
-
         gender_pred = gender_model.predict(face, verbose=0)
         age_pred = age_model.predict(face, verbose=0)
-
         gender = GENDER_LABELS[np.argmax(gender_pred)]
         age = AGE_LABELS[np.argmax(age_pred)]
-
         category = f"{gender}_{age}"
-        label = f"{gender}, {age}"
-        last_prediction_label = label
-        print(f"[DETECTED] {label} → Category: {category}")
-
+        print(f"[DETECTED] {gender}, {age} → Category: {category}")
         return category if category in CATEGORIES else "unknown"
     except Exception as e:
         print(f"[ERROR] Prediction failed: {e}")
         return "unknown"
 
-# ======== Detect Faces and Add to Queue ========
 def detect_faces():
     global ad_queue, last_seen_time
-
     cap = open_camera()
     with face_detector as detector:
         while True:
             ret, frame = cap.read()
             if not ret:
                 continue
-
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = detector.process(rgb)
-
             if result.detections:
-                # Pick the largest face
                 largest_box = None
                 max_area = 0
                 for detection in result.detections:
@@ -122,7 +113,6 @@ def detect_faces():
                     if area > max_area:
                         max_area = area
                         largest_box = (x, y, bw, bh)
-
                 if largest_box:
                     x, y, bw, bh = largest_box
                     face_img = frame[y:y+bh, x:x+bw]
@@ -134,10 +124,7 @@ def detect_faces():
                                 last_seen_time = time.time()
             time.sleep(1)
 
-# ======== Main Loop =========
 def main_loop():
-    global ad_queue, is_playing_ad
-
     while True:
         with ad_lock:
             recent_detection = time.time() - last_seen_time < DETECTION_TIMEOUT
@@ -151,10 +138,9 @@ def main_loop():
                 if video_files:
                     video_path = os.path.join(category_path, random.choice(video_files))
                     print(f"[TARGETED] Playing: {video_path}")
-                    play_video(video_path)
+                    play_video(video_path, duration_limit=PLAY_DURATION, speed=VIDEO_SPEED)
                     continue
 
-        # Otherwise play random ad
         all_videos = []
         for cat in CATEGORIES:
             cat_path = os.path.join(ADS_FOLDER, cat)
@@ -162,20 +148,16 @@ def main_loop():
                 for video in os.listdir(cat_path):
                     if video.lower().endswith(('.mp4', '.avi')):
                         all_videos.append(os.path.join(cat_path, video))
-
         if all_videos:
             print("[RANDOM] Playing random ad")
-            play_video(random.choice(all_videos))
+            play_video(random.choice(all_videos), duration_limit=PLAY_DURATION, speed=VIDEO_SPEED)
 
         time.sleep(0.1)
 
-# ======== Run ========
 if __name__ == "__main__":
     print("📺 Starting Ad Display System... Press Ctrl+C to stop.")
-    face_thread = threading.Thread(target=detect_faces)
-    face_thread.daemon = True
+    face_thread = threading.Thread(target=detect_faces, daemon=True)
     face_thread.start()
-
     try:
         main_loop()
     except KeyboardInterrupt:

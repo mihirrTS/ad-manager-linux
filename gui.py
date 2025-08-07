@@ -21,7 +21,7 @@ class AdManagerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Targeted Ad Manager")
-        self.root.geometry("900x700")
+        self.root.geometry("900x750")
 
         self.presentation_process = None
         self.dark_mode = tk.BooleanVar(value=False)
@@ -44,6 +44,17 @@ class AdManagerApp:
 
         tk.Checkbutton(control_frame, text="Dark Mode", variable=self.dark_mode, command=self.toggle_theme).pack(side=tk.LEFT, padx=5)
         tk.Checkbutton(control_frame, text="Show Terminal", variable=self.show_terminal, command=self.toggle_terminal).pack(side=tk.LEFT, padx=5)
+
+        # NEW: Speed and Duration Sliders
+        tk.Label(self.main_frame, text="Video Speed (0.5x to 2.0x):").pack(pady=2)
+        self.speed_slider = tk.Scale(self.main_frame, from_=0.5, to=2.0, resolution=0.1, orient=tk.HORIZONTAL)
+        self.speed_slider.set(1.0)
+        self.speed_slider.pack()
+
+        tk.Label(self.main_frame, text="Video Play Duration (seconds):").pack(pady=2)
+        self.duration_slider = tk.Scale(self.main_frame, from_=1, to=15, orient=tk.HORIZONTAL)
+        self.duration_slider.set(5)
+        self.duration_slider.pack()
 
         tk.Button(self.main_frame, text="Upload Ad", command=self.upload_ad).pack(pady=5)
         tk.Button(self.main_frame, text="View Ads in Category", command=self.view_ads).pack(pady=5)
@@ -197,10 +208,13 @@ class AdManagerApp:
     def run_presentation(self):
         self.log("🔄 Presentation is starting...")
 
+        speed = self.speed_slider.get()
+        duration = self.duration_slider.get()
+
         def start():
             try:
                 self.presentation_process = subprocess.Popen(
-                    [sys.executable, "main.py"],
+                    [sys.executable, "main.py", str(speed), str(duration)],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True
